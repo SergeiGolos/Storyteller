@@ -8,7 +8,6 @@ using Newtonsoft.Json;
 
 namespace StoryTeller.Util
 {
-
     /// <summary>
     ///     HtmlTag that *only outputs the literal html put into it in the
     ///     constructor function
@@ -34,7 +33,8 @@ namespace StoryTeller.Util
         /// <returns></returns>
         public static HtmlTag AppendHtml(this HtmlTag tag, string html) => tag.Append(new LiteralTag(html));
     }
-    public class HtmlTag
+    
+    public class HtmlTag : IDecoratable<HtmlTag>
     {
         public static HtmlTag Empty() => new HtmlTag("span").Render(false);
 
@@ -51,14 +51,15 @@ namespace StoryTeller.Util
         }
 
         public static string MetadataAttribute => DataPrefix + _metadataSuffix;
-
-        private readonly List<HtmlTag> _children = new List<HtmlTag>();
+        
+        private IEnumerable<IDecorator<HtmlTag>> _decorators = Array.Empty<IDecorator<HtmlTag>>();
+        private bool _renderFromTop;
+        
         private readonly HashSet<string> _cssClasses = new HashSet<string>();
         private readonly IDictionary<string, string> _customStyles = new Dictionary<string, string>();
-
         private readonly LightweightCache<string, HtmlAttribute> _htmlAttributes = new LightweightCache<string, HtmlAttribute>(key => null);
-
         private readonly LightweightCache<string, object> _metaData = new LightweightCache<string, object>();
+
         private string _innerText = String.Empty;
         private bool _shouldRender = true;
         private string _tag;
@@ -116,7 +117,7 @@ namespace StoryTeller.Util
         /// <returns></returns>
         public HtmlTag After() => Next;
 
-        public IList<HtmlTag> Children => _children;
+        public IList<HtmlTag> Children { get; }
 
         public HtmlTag Parent { get; private set; }
 
@@ -128,12 +129,12 @@ namespace StoryTeller.Util
             return this;
         }
 
-        public HtmlTag FirstChild() => _children.FirstOrDefault();
+        public HtmlTag FirstChild() => Children.FirstOrDefault();
 
         public void InsertFirst(HtmlTag tag)
         {
             tag.Parent = this;
-            _children.Insert(0, tag);
+            Children.Insert(0, tag);
         }
 
         public HtmlTag Style(string key, string value)
@@ -185,7 +186,7 @@ namespace StoryTeller.Util
         public T Add<T>() where T : HtmlTag, new()
         {
             var child = new T { Parent = this };
-            _children.Add(child);
+            Children.Add(child);
             return child;
         }
 
@@ -197,7 +198,7 @@ namespace StoryTeller.Util
         public HtmlTag Append(HtmlTag child)
         {
             child.Parent = this;
-            _children.Add(child);
+            Children.Add(child);
             return this;
         }
 
@@ -234,7 +235,7 @@ namespace StoryTeller.Util
             tags.Each(x =>
             {
                 x.Parent = this;
-                _children.Add(x);
+                Children.Add(x);
             });
             return this;
         }
@@ -350,6 +351,12 @@ namespace StoryTeller.Util
         public bool Authorized() => _isAuthorized;
 
 
+        public HtmlTag Apply(IDecorator<HtmlTag> decorator)
+        {
+            this._decorators = decorator.Rule.Apply(this._decorators, decorator);
+            return this;
+        }
+
         public override string ToString()
         {
             return WillBeRendered()
@@ -374,7 +381,6 @@ namespace StoryTeller.Util
             return html.InnerWriter.ToString();
         }
 
-        private bool _renderFromTop;
 
         public HtmlTag RenderFromTop()
         {
@@ -396,6 +402,8 @@ namespace StoryTeller.Util
         {
             if (!WillBeRendered()) return;
 
+            ApplyDecorators();
+            
             WriteBeginTag(html);
 
             WriteContent(html);
@@ -403,6 +411,14 @@ namespace StoryTeller.Util
             WriteEndTag(html);
 
             Next?.WriteHtml(html);
+        }
+
+        protected void ApplyDecorators()
+        {
+            foreach (var decorator in this._decorators ?? Array.Empty<IDecorator<HtmlTag>>())
+            {
+                decorator.Apply(this);
+            }
         }
 
         protected void WriteBeginTag(HtmlTextWriter html)
@@ -467,7 +483,7 @@ namespace StoryTeller.Util
                 }
             }
 
-            _children.Each(x => x.WriteHtml(html));
+            Children.Each(x => x.WriteHtml(html));
         }
 
         private void WriteEndTag(HtmlTextWriter html)

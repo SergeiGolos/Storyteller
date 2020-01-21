@@ -55,4 +55,7 @@
     <PackageReference Include="System.Diagnostics.TraceSource" Version="4.3.0" />
     <PackageReference Include="System.Net.NameResolution" Version="4.3.0" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Util\Html" />
+  </ItemGroup>
 </Project>
